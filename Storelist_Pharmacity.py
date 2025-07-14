@@ -42,4 +42,4 @@ with open('pharmacity_all_stores.csv', 'w', newline='', encoding='utf-8-sig') as
     ])
     writer.writerows(store_list)
 
-print(f"✅ Đã lưu {len(store_list)} cửa hàng vào pharmacity_all_stores.csv")
+print(f"Đã lưu {len(store_list)} cửa hàng vào pharmacity_all_stores.csv")

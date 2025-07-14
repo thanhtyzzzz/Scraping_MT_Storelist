@@ -2,7 +2,7 @@ import requests
 from bs4 import BeautifulSoup
 import csv
 
-# 1Gửi request để lấy trang HTML
+# Gửi request để lấy trang HTML
 URL = 'https://sieuthibsmart.com/he-thong-b-smart/'
 res = requests.get(URL)
 res.raise_for_status()

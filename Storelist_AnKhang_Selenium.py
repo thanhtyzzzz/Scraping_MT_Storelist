@@ -5,7 +5,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import time
-import csv
+import pandas as pd
 import re
 
 # Khởi tạo driver
@@ -82,7 +82,7 @@ try:
                 time.sleep(3)
 
         if not click_success:
-            continue  # Bỏ qua tỉnh nếu click thất bại
+            continue  
 
         # Kiểm tra xem có nhà thuốc hay không
         no_store_message = driver.find_elements(By.CSS_SELECTOR, ".no-results, .empty-message, [class*='no-store'], [class*='empty'], [class*='error'], [class*='no-data']")
@@ -92,14 +92,13 @@ try:
 
         # Bấm load more nhiều lần
         see_more_attempts = 0
-        max_attempts = 20  # Tăng giới hạn để đảm bảo lấy hết
+        max_attempts = 20
         while see_more_attempts < max_attempts:
             try:
                 prev_count = len(driver.find_elements(By.CSS_SELECTOR, "ul.listing-store.zl-list li"))
                 see_more = WebDriverWait(driver, 10).until(
                     EC.element_to_be_clickable((By.CSS_SELECTOR, "a.seemore"))
                 )
-                # Kiểm tra văn bản nút "Xem thêm"
                 see_more_text = see_more.get_attribute("innerHTML")
                 remaining_stores = re.search(r'Xem thêm <b>(\d+)</b> nhà thuốc', see_more_text)
                 if remaining_stores:
@@ -134,14 +133,12 @@ try:
 
         print(f"Đã lấy {store_count} nhà thuốc tại {province_name}")
 
-    # Lưu kết quả ra CSV
+    # Lưu kết quả ra XLSX
     timestamp = int(time.time())
-    with open(f"ankhang_stores_{timestamp}.csv", "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(["Tỉnh", "Tên Nhà Thuốc", "Địa Chỉ"])
-        writer.writerows(results)
+    df = pd.DataFrame(results, columns=["Tỉnh", "Tên Nhà Thuốc", "Địa Chỉ"])
+    df.to_excel(f"ankhang_stores_{timestamp}.xlsx", index=False, engine='openpyxl')
 
-    print(f"Đã lưu {len(results)} nhà thuốc vào ankhang_stores_{timestamp}.csv")
+    print(f"Đã lưu {len(results)} nhà thuốc vào ankhang_stores_{timestamp}.xlsx")
 
 finally:
-    driver.quit() 
+    driver.quit()

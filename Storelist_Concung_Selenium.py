@@ -185,7 +185,7 @@ try:
         writer.writerow(["Tỉnh", "Quận/Huyện", "Xã/Phường", "Địa Chỉ"])
         writer.writerows(results)
 
-    print(f"Đã lưu {len(results)} cửa hàng vào concung_stores_{timestamp}.csv")
+    print(f"Đã lưu {len(results)} cửa hàng vào concung_stores.csv")
 
 finally:
     driver.quit()
