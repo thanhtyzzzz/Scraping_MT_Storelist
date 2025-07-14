@@ -4,7 +4,7 @@ from unidecode import unidecode
 import openpyxl
 import os
 
-# Danh sách file input và thông tin thương hiệu
+# Danh sách file input và thông tin Brand Store
 input_files = [
     {"file": "ankhang_stores.xlsx", "brand": "AnKhang"},
     {"file": "bachhoaxanh_stores.csv", "brand": "BachHoaXanh"},
