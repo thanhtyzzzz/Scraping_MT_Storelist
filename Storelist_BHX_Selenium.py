@@ -5,7 +5,30 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import time
-import csv
+import pandas as pd
+from datetime import datetime
+import openpyxl
+
+# Hàm ghi log lỗi vào file Excel
+def log_error(file_name, error_message):
+    log_file = "error_log.xlsx"
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_data = [[timestamp, file_name, error_message]]
+    
+    try:
+        try:
+            wb = openpyxl.load_workbook(log_file)
+            ws = wb.active
+        except FileNotFoundError:
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.append(["Timestamp", "File", "Error Message"])
+        
+        ws.append([timestamp, file_name, error_message])
+        wb.save(log_file)
+        print(f"Đã ghi lỗi vào {log_file}: {error_message}")
+    except Exception as e:
+        print(f"Lỗi khi ghi log vào {log_file}: {e}")
 
 # === CONFIGURE BROWSER ===
 options = Options()
@@ -16,8 +39,13 @@ driver = webdriver.Chrome(service=Service(), options=options)
 wait = WebDriverWait(driver, 20)
 
 # === ACCESS WEBSITE ===
-driver.get("https://www.bachhoaxanh.com/he-thong-cua-hang")
-time.sleep(5)
+try:
+    driver.get("https://www.bachhoaxanh.com/he-thong-cua-hang")
+    time.sleep(5)
+except Exception as e:
+    error_message = f"Lỗi khi truy cập trang web: {e}"
+    log_error("Storelist_BHX_Selenium.py", error_message)
+    raise
 
 # === CLICK 'XEM THÊM' UNTIL NO MORE BUTTONS ===
 def click_see_more_until_end(province):
@@ -32,7 +60,8 @@ def click_see_more_until_end(province):
             driver.execute_script("arguments[0].click();", see_more)
             time.sleep(2)
         except Exception as e:
-            print(f"Đã bấm hết tất cả nút 'Xem thêm' cho {province} hoặc gặp lỗi:", str(e))
+            error_message = f"Đã bấm hết tất cả nút 'Xem thêm' cho {province} hoặc gặp lỗi: {str(e)}"
+            log_error("Storelist_BHX_Selenium.py", error_message)
             break
 
 # === GET STORE NAMES AND ADDRESSES ===
@@ -52,14 +81,16 @@ def get_store_addresses(province):
                 address = ""
             results.append([name, address, province])
         except Exception as e:
-            print(f"Lỗi khi xử lý cửa hàng: {text}, lỗi: {str(e)}")
+            error_message = f"Lỗi khi xử lý cửa hàng: {text}, lỗi: {str(e)}"
+            log_error("Storelist_BHX_Selenium.py", error_message)
             continue
 
     try:
         store_count = driver.find_element(By.XPATH, "//p[contains(text(), 'Có')]//span[@class='font-bold']").text
         print(f"Tỉnh {province} có {store_count} cửa hàng, lấy được {len(results)} cửa hàng")
     except:
-        print(f"Không tìm thấy số lượng cửa hàng cho {province}")
+        error_message = f"Không tìm thấy số lượng cửa hàng cho {province}"
+        log_error("Storelist_BHX_Selenium.py", error_message)
 
     return results
 
@@ -81,7 +112,8 @@ def scrape_all_provinces():
         driver.execute_script("arguments[0].click();", province_dropdown)
         time.sleep(3)
     except Exception as e:
-        print("Lỗi khi tìm hoặc mở dropdown tỉnh/thành phố:", str(e))
+        error_message = f"Lỗi khi tìm hoặc mở dropdown tỉnh/thành phố: {str(e)}"
+        log_error("Storelist_BHX_Selenium.py", error_message)
         driver.refresh()
         time.sleep(5)
         return all_store_data
@@ -93,9 +125,11 @@ def scrape_all_provinces():
         print(f"Tìm thấy {len(provinces)} tỉnh/thành phố (ngoại trừ TP. Hồ Chí Minh): {provinces}")
 
         if not provinces:
-            print("Không tìm thấy tỉnh/thành phố nào, kiểm tra HTML dropdown")
+            error_message = "Không tìm thấy tỉnh/thành phố nào, kiểm tra HTML dropdown"
+            log_error("Storelist_BHX_Selenium.py", error_message)
     except Exception as e:
-        print("Lỗi khi lấy danh sách tỉnh/thành phố:", str(e))
+        error_message = f"Lỗi khi lấy danh sách tỉnh/thành phố: {str(e)}"
+        log_error("Storelist_BHX_Selenium.py", error_message)
         driver.refresh()
         time.sleep(5)
         return all_store_data
@@ -118,9 +152,11 @@ def scrape_all_provinces():
                 time.sleep(4)
                 break
             except Exception as e:
-                print(f"Lỗi khi chọn tỉnh {province} (thử {attempt + 1}/{max_retries}):", str(e))
+                error_message = f"Lỗi khi chọn tỉnh {province} (thử {attempt + 1}/{max_retries}): {str(e)}"
+                log_error("Storelist_BHX_Selenium.py", error_message)
                 if attempt == max_retries - 1:
-                    print(f"Bỏ qua tỉnh {province} sau {max_retries} lần thử")
+                    error_message = f"Bỏ qua tỉnh {province} sau {max_retries} lần thử"
+                    log_error("Storelist_BHX_Selenium.py", error_message)
                     break
                 time.sleep(2)
         else:
@@ -136,12 +172,14 @@ def scrape_all_provinces():
 try:
     store_data = scrape_all_provinces()
 
-    with open("bachhoaxanh_stores.csv", "w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.writer(f)
-        writer.writerow(["Tên Cửa Hàng", "Địa Chỉ", "Tỉnh/Thành Phố"])
-        writer.writerows(store_data)
-
-    print("Đã lưu vào bachhoaxanh_stores.csv")
+    try:
+        df = pd.DataFrame(store_data, columns=["Tên Cửa Hàng", "Địa Chỉ", "Tỉnh/Thành Phố"])
+        df.to_excel("bachhoaxanh_stores.xlsx", index=False, engine='openpyxl')
+        print("Đã lưu vào bachhoaxanh_stores.xlsx")
+    except Exception as e:
+        error_message = f"Lỗi khi lưu file bachhoaxanh_stores.xlsx: {e}"
+        log_error("Storelist_BHX_Selenium.py", error_message)
+        raise
 
 finally:
     driver.quit()

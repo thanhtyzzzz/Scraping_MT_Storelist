@@ -5,9 +5,32 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 import time
-import csv
+import pandas as pd
+import openpyxl
 from retrying import retry
 from selenium.common.exceptions import StaleElementReferenceException, TimeoutException
+from datetime import datetime
+
+# Hàm ghi log lỗi vào file Excel
+def log_error(file_name, error_message):
+    log_file = "error_log.xlsx"
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_data = [[timestamp, file_name, error_message]]
+    
+    try:
+        try:
+            wb = openpyxl.load_workbook(log_file)
+            ws = wb.active
+        except FileNotFoundError:
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.append(["Timestamp", "File", "Error Message"])
+        
+        ws.append([timestamp, file_name, error_message])
+        wb.save(log_file)
+        print(f"Đã ghi lỗi vào {log_file}: {error_message}")
+    except Exception as e:
+        print(f"Lỗi khi ghi log vào {log_file}: {e}")
 
 # Khởi tạo WebDriver
 options = webdriver.ChromeOptions()
@@ -15,12 +38,16 @@ options.add_argument("--disable-blink-features=AutomationControlled")
 options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36")
 options.add_argument("--disable-web-security")
 options.add_argument("--disable-site-isolation-trials")
-# options.add_argument("--headless")  # Bỏ comment nếu muốn chạy ẩn
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
-# Mở trang web
-url = "https://nhathuoclongchau.com.vn/he-thong-cua-hang/"
-driver.get(url)
+try:
+    url = "https://nhathuoclongchau.com.vn/he-thong-cua-hang/"
+    driver.get(url)
+except Exception as e:
+    error_message = f"Lỗi khi truy cập trang web: {e}"
+    log_error("Storelist_LongChau_Selenium.py", error_message)
+    driver.quit()
+    exit()
 
 # Chờ dropdown tỉnh/thành
 try:
@@ -28,11 +55,12 @@ try:
         EC.presence_of_element_located((By.CSS_SELECTOR, "div.w-full.dropdown-input"))
     )
 except Exception as e:
-    print(f"Lỗi khi chờ dropdown: {e}")
+    error_message = f"Lỗi khi chờ dropdown: {e}"
+    log_error("Storelist_LongChau_Selenium.py", error_message)
     driver.quit()
     exit()
 
-# Danh sách để lưu địa chỉ
+
 all_addresses = []
 
 try:
@@ -41,9 +69,15 @@ try:
         dropdown = driver.find_element(By.CSS_SELECTOR, "div.w-full.dropdown-input")
         dropdown.click()
     except:
-        print("Không click được div, thử click span...")
-        dropdown = driver.find_element(By.CSS_SELECTOR, "span.dropdown-icon")
-        dropdown.click()
+        try:
+            print("Không click được div, thử click span...")
+            dropdown = driver.find_element(By.CSS_SELECTOR, "span.dropdown-icon")
+            dropdown.click()
+        except Exception as e:
+            error_message = f"Lỗi khi click dropdown: {e}"
+            log_error("Storelist_LongChau_Selenium.py", error_message)
+            driver.quit()
+            exit()
     
     print("Đã click dropdown, kiểm tra trạng thái...")
     
@@ -53,7 +87,6 @@ try:
             EC.presence_of_element_located((By.CSS_SELECTOR, "div.dropdown-menu"))
         )
         print("Dropdown đã mở, kiểm tra input tìm kiếm...")
-        # Xóa input tìm kiếm
         try:
             search_input = driver.find_element(By.CSS_SELECTOR, "div.dropdown-menu input[placeholder='Nhập tìm Tỉnh/Thành phố']")
             search_input.clear()
@@ -61,8 +94,8 @@ try:
         except:
             print("Không tìm thấy input tìm kiếm, tiếp tục...")
     except Exception as e:
-        print(f"Lỗi khi chờ danh sách tỉnh/thành: {e}")
-        print("HTML trang:", driver.page_source[:1000])
+        error_message = f"Lỗi khi chờ danh sách tỉnh/thành: {e}"
+        log_error("Storelist_LongChau_Selenium.py", error_message)
         driver.quit()
         exit()
 
@@ -82,17 +115,18 @@ try:
             province_elements = new_provinces
             time.sleep(1)
         except Exception as e:
-            print(f"Lỗi khi scroll dropdown (lần {retry_count + 1}): {e}")
+            error_message = f"Lỗi khi scroll dropdown (lần {retry_count + 1}): {e}"
+            log_error("Storelist_LongChau_Selenium.py", error_message)
             retry_count += 1
             if retry_count == 3:
-                print("Không thể scroll dropdown sau 3 lần thử!")
+                error_message = "Không thể scroll dropdown sau 3 lần thử!"
+                log_error("Storelist_LongChau_Selenium.py", error_message)
                 break
     
     provinces = [elem.text.strip() for elem in province_elements if elem.text.strip()]
     print(f"Tìm được {len(provinces)} tỉnh/thành: {provinces}")
 
     if not provinces:
-        print("Không tìm được tỉnh/thành, thử click lại dropdown...")
         try:
             dropdown.click()
             WebDriverWait(driver, 20).until(
@@ -102,24 +136,23 @@ try:
             provinces = [elem.text.strip() for elem in province_elements if elem.text.strip()]
             print(f"Thử lại: Tìm được {len(provinces)} tỉnh/thành: {provinces}")
         except Exception as e:
-            print(f"Lỗi khi thử lại: {e}")
-            print("HTML trang:", driver.page_source[:1000])
+            error_message = f"Lỗi khi thử lại lấy tỉnh/thành: {e}"
+            log_error("Storelist_LongChau_Selenium.py", error_message)
             driver.quit()
             exit()
 
     if not provinces:
-        print("Vẫn không tìm được tỉnh/thành, kiểm tra HTML hoặc kết nối mạng!")
+        error_message = "Vẫn không tìm được tỉnh/thành, kiểm tra HTML hoặc kết nối mạng!"
+        log_error("Storelist_LongChau_Selenium.py", error_message)
         driver.quit()
         exit()
 
-    previous_province_addresses = set()  # Lưu địa chỉ của tỉnh trước để kiểm tra trùng lặp
+    previous_province_addresses = set()
     for province in provinces:
         print(f"\nĐang xử lý tỉnh/thành: {province}")
-        # Chọn tỉnh/thành với retry
         retry_count = 0
         while retry_count < 5:
             try:
-                # Kiểm tra trạng thái dropdown
                 dropdown_state = driver.find_element(By.CSS_SELECTOR, "div.w-full.dropdown-input").get_attribute("data-state")
                 if dropdown_state != "open":
                     dropdown.click()
@@ -129,30 +162,30 @@ try:
                 province_option = driver.find_element(By.XPATH, f"//div[contains(@class, 'dropdown-item') and contains(text(), '{province}')]")
                 driver.execute_script("arguments[0].scrollIntoView(true);", province_option)
                 province_option.click()
-                time.sleep(1)  # Delay để đảm bảo tỉnh được chọn
+                time.sleep(1)
                 break
             except Exception as e:
-                print(f"Lỗi khi chọn tỉnh {province} (lần {retry_count + 1}): {e}")
+                error_message = f"Lỗi khi chọn tỉnh {province} (lần {retry_count + 1}): {e}"
+                log_error("Storelist_LongChau_Selenium.py", error_message)
                 retry_count += 1
                 if retry_count == 5:
-                    print(f"Bỏ qua tỉnh {province} sau 5 lần thử.")
+                    error_message = f"Bỏ qua tỉnh {province} sau 5 lần thử."
+                    log_error("Storelist_LongChau_Selenium.py", error_message)
                     break
                 time.sleep(2)
         if retry_count == 5:
             continue
 
-        # Chờ danh sách nhà thuốc tải
         try:
             WebDriverWait(driver, 30).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, "p.text-body2.text-gray-10"))
             )
-            # Đợi thêm để đảm bảo danh sách làm mới
             time.sleep(2)
         except Exception as e:
-            print(f"Lỗi khi chờ danh sách nhà thuốc cho {province}: {e}")
+            error_message = f"Lỗi khi chờ danh sách nhà thuốc cho {province}: {e}"
+            log_error("Storelist_LongChau_Selenium.py", error_message)
             continue
 
-        # Thu thập địa chỉ
         province_addresses = []
         @retry(stop_max_attempt_number=5, wait_fixed=3000)
         def click_show_more():
@@ -170,11 +203,11 @@ try:
                 for element in address_elements:
                     try:
                         address = element.text.strip()
-                        # Kiểm tra trùng lặp với tỉnh trước
                         if address and address not in province_addresses and address not in previous_province_addresses:
                             addresses.append(address)
                     except StaleElementReferenceException:
-                        print(f"Stale element khi lấy địa chỉ ở {province}, thử lại...")
+                        error_message = f"Stale element khi lấy địa chỉ ở {province}, thử lại..."
+                        log_error("Storelist_LongChau_Selenium.py", error_message)
                         break
                 province_addresses.extend(addresses)
                 for address in addresses:
@@ -197,31 +230,27 @@ try:
                     print(f"Hết địa chỉ hoặc lỗi khi nhấn 'Xem thêm' ở {province}.")
                     break
             except StaleElementReferenceException:
-                print(f"Stale element khi lấy danh sách địa chỉ ở {province}, thử lại...")
+                error_message = f"Stale element khi lấy danh sách địa chỉ ở {province}, thử lại..."
+                log_error("Storelist_LongChau_Selenium.py", error_message)
                 time.sleep(1)
                 continue
             except Exception as e:
-                print(f"Lỗi khác khi lấy địa chỉ ở {province}: {e}")
+                error_message = f"Lỗi khác khi lấy địa chỉ ở {province}: {e}"
+                log_error("Storelist_LongChau_Selenium.py", error_message)
                 break
 
-        # Cập nhật danh sách địa chỉ tỉnh trước
         previous_province_addresses = set(province_addresses)
-        
-        # Delay giữa các tỉnh để tránh chặn bot
         time.sleep(2)
 
 finally:
-    # Lưu file CSV tổng
-    csv_file = "longchau_all_addresses.csv"
     try:
-        with open(csv_file, mode='w', encoding='utf-8-sig', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerow(['STT', 'Tỉnh/Thành', 'Địa chỉ'])
-            for i, (province, address) in enumerate(all_addresses, 1):
-                writer.writerow([i, province, address])
+        df = pd.DataFrame(all_addresses, columns=['Tỉnh/Thành', 'Địa chỉ'])
+        df.insert(0, 'STT', range(1, len(df) + 1))
+        df.to_excel("longchau_all_addresses.xlsx", index=False, engine='openpyxl')
         print(f"\nTổng số địa chỉ tìm được: {len(all_addresses)}")
-        print(f"Danh sách địa chỉ tổng được lưu vào {csv_file}")
+        print(f"Danh sách địa chỉ tổng được lưu vào longchau_all_addresses.xlsx")
     except Exception as e:
-        print(f"Lỗi khi lưu file CSV tổng: {e}")
+        error_message = f"Lỗi khi lưu file longchau_all_addresses.xlsx: {e}"
+        log_error("Storelist_LongChau_Selenium.py", error_message)
 
     driver.quit()

@@ -5,7 +5,30 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 import time
-import csv
+import pandas as pd
+import openpyxl
+from datetime import datetime
+
+# Hàm ghi log lỗi vào file Excel
+def log_error(file_name, error_message):
+    log_file = "error_log.xlsx"
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_data = [[timestamp, file_name, error_message]]
+    
+    try:
+        try:
+            wb = openpyxl.load_workbook(log_file)
+            ws = wb.active
+        except FileNotFoundError:
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.append(["Timestamp", "File", "Error Message"])
+        
+        ws.append([timestamp, file_name, error_message])
+        wb.save(log_file)
+        print(f"Đã ghi lỗi vào {log_file}: {error_message}")
+    except Exception as e:
+        print(f"Lỗi khi ghi log vào {log_file}: {e}")
 
 # Khởi tạo driver
 chrome_options = webdriver.ChromeOptions()
@@ -28,8 +51,9 @@ try:
         )
         driver.execute_script("arguments[0].click();", close_popup)
         print("Đã đóng pop-up hoặc dialog đồng ý")
-    except:
-        print("Không tìm thấy pop-up, tiếp tục...")
+    except Exception as e:
+        error_message = f"Không tìm thấy pop-up, tiếp tục...: {e}"
+        log_error("Storelist_Concung_Selenium.py", error_message)
 
     try:
         choose_area = WebDriverWait(driver, 40).until(
@@ -38,7 +62,8 @@ try:
         driver.execute_script("arguments[0].click();", choose_area)
         print("Đã kích hoạt chọn khu vực")
     except Exception as e:
-        print(f"Lỗi khi kích hoạt chọn khu vực: {e}")
+        error_message = f"Lỗi khi kích hoạt chọn khu vực: {e}"
+        log_error("Storelist_Concung_Selenium.py", error_message)
         raise
 
     province_trigger = WebDriverWait(driver, 40).until(
@@ -47,25 +72,35 @@ try:
     driver.execute_script("arguments[0].click();", province_trigger)
     time.sleep(2)
 
-    province_options = WebDriverWait(driver, 40).until(
-        EC.presence_of_all_elements_located((By.CSS_SELECTOR, "#group-select-unit .item-address-main"))
-    )
-    provinces = [(opt.find_element(By.CSS_SELECTOR, "span.font-14").text, opt.get_attribute("id")) for opt in province_options]
-    print(f"Tìm thấy {len(provinces)} tỉnh/thành: {provinces}")
+    try:
+        province_options = WebDriverWait(driver, 40).until(
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, "#group-select-unit .item-address-main"))
+        )
+        provinces = [(opt.find_element(By.CSS_SELECTOR, "span.font-14").text, opt.get_attribute("id")) for opt in province_options]
+        print(f"Tìm thấy {len(provinces)} tỉnh/thành: {provinces}")
+    except Exception as e:
+        error_message = f"Lỗi khi lấy danh sách tỉnh: {e}"
+        log_error("Storelist_Concung_Selenium.py", error_message)
+        raise
 
     results = []
 
     for province_name, province_id in provinces:
-        province_trigger = WebDriverWait(driver, 40).until(
-            EC.element_to_be_clickable((By.ID, "province_home"))
-        )
-        driver.execute_script("arguments[0].click();", province_trigger)
-        province_elem = WebDriverWait(driver, 40).until(
-            EC.element_to_be_clickable((By.ID, province_id))
-        )
-        driver.execute_script("arguments[0].click();", province_elem)
-        print(f"Đang xử lý tỉnh: {province_name}")
-        time.sleep(2)
+        try:
+            province_trigger = WebDriverWait(driver, 40).until(
+                EC.element_to_be_clickable((By.ID, "province_home"))
+            )
+            driver.execute_script("arguments[0].click();", province_trigger)
+            province_elem = WebDriverWait(driver, 40).until(
+                EC.element_to_be_clickable((By.ID, province_id))
+            )
+            driver.execute_script("arguments[0].click();", province_elem)
+            print(f"Đang xử lý tỉnh: {province_name}")
+            time.sleep(2)
+        except Exception as e:
+            error_message = f"Lỗi khi chọn tỉnh {province_name}: {e}"
+            log_error("Storelist_Concung_Selenium.py", error_message)
+            continue
 
         try:
             district_trigger = WebDriverWait(driver, 40).until(
@@ -78,24 +113,31 @@ try:
             )
             districts = [(opt.find_element(By.CSS_SELECTOR, "span.font-14").text, opt.get_attribute("id")) for opt in district_options]
             if not districts:
-                print(f"Không tìm thấy quận/huyện tại {province_name}, có thể không có dữ liệu")
+                error_message = f"Không tìm thấy quận/huyện tại {province_name}, có thể không có dữ liệu"
+                log_error("Storelist_Concung_Selenium.py", error_message)
             else:
                 print(f"Tìm thấy {len(districts)} quận/huyện: {districts}")
         except Exception as e:
-            print(f"Lỗi khi lấy quận/huyện tại {province_name}: {e}")
+            error_message = f"Lỗi khi lấy quận/huyện tại {province_name}: {e}"
+            log_error("Storelist_Concung_Selenium.py", error_message)
             districts = []
 
         for district_name, district_id in districts:
-            district_trigger = WebDriverWait(driver, 40).until(
-                EC.element_to_be_clickable((By.ID, "district_home"))
-            )
-            driver.execute_script("arguments[0].click();", district_trigger)
-            district_elem = WebDriverWait(driver, 40).until(
-                EC.element_to_be_clickable((By.ID, district_id))
-            )
-            driver.execute_script("arguments[0].click();", district_elem)
-            print(f"Đang xử lý quận/huyện: {district_name}")
-            time.sleep(2)
+            try:
+                district_trigger = WebDriverWait(driver, 40).until(
+                    EC.element_to_be_clickable((By.ID, "district_home"))
+                )
+                driver.execute_script("arguments[0].click();", district_trigger)
+                district_elem = WebDriverWait(driver, 40).until(
+                    EC.element_to_be_clickable((By.ID, district_id))
+                )
+                driver.execute_script("arguments[0].click();", district_elem)
+                print(f"Đang xử lý quận/huyện: {district_name}")
+                time.sleep(2)
+            except Exception as e:
+                error_message = f"Lỗi khi chọn quận/huyện {district_name}: {e}"
+                log_error("Storelist_Concung_Selenium.py", error_message)
+                continue
 
             try:
                 ward_trigger = WebDriverWait(driver, 40).until(
@@ -108,27 +150,30 @@ try:
                 )
                 wards = [(opt.find_element(By.CSS_SELECTOR, "span.font-14").text, opt.get_attribute("id")) for opt in ward_options]
                 if not wards:
-                    print(f"Không tìm thấy xã/phường tại {province_name}/{district_name}, có thể không có dữ liệu")
+                    error_message = f"Không tìm thấy xã/phường tại {province_name}/{district_name}, có thể không có dữ liệu"
+                    log_error("Storelist_Concung_Selenium.py", error_message)
                 else:
                     print(f"Tìm thấy {len(wards)} xã/phường: {wards}")
             except Exception as e:
-                print(f"Lỗi khi lấy xã/phường tại {province_name}/{district_name}: {e}")
+                error_message = f"Lỗi khi lấy xã/phường tại {province_name}/{district_name}: {e}"
+                log_error("Storelist_Concung_Selenium.py", error_message)
                 wards = []
 
             for ward_name, ward_id in wards:
-                ward_trigger = WebDriverWait(driver, 40).until(
-                    EC.element_to_be_clickable((By.ID, "ward_home"))
-                )
-                driver.execute_script("arguments[0].click();", ward_trigger)
                 try:
+                    ward_trigger = WebDriverWait(driver, 40).until(
+                        EC.element_to_be_clickable((By.ID, "ward_home"))
+                    )
+                    driver.execute_script("arguments[0].click();", ward_trigger)
                     ward_elem = WebDriverWait(driver, 10).until(
                         EC.element_to_be_clickable((By.ID, ward_id))
                     )
                     driver.execute_script("arguments[0].click();", ward_elem)
+                    print(f"Đang xử lý xã/phường: {ward_name}")
+                    time.sleep(2)
                 except Exception as e:
-                    print(f"Không tìm thấy {ward_id}, scrape trực tiếp: {e}")
-                print(f"Đang xử lý xã/phường: {ward_name}")
-                time.sleep(2)
+                    error_message = f"Không tìm thấy {ward_id}, scrape trực tiếp: {e}"
+                    log_error("Storelist_Concung_Selenium.py", error_message)
 
                 group_select_unit = WebDriverWait(driver, 40).until(
                     EC.presence_of_element_located((By.ID, "group-select-unit"))
@@ -164,28 +209,34 @@ try:
                         if address:
                             results.append([province_name, district_name, ward_name, full_address])
                     except Exception as e:
-                        print(f"Lỗi khi lấy địa chỉ cửa hàng tại {province_name}/{district_name}/{ward_name}: {e}")
+                        error_message = f"Lỗi khi lấy địa chỉ cửa hàng tại {province_name}/{district_name}/{ward_name}: {e}"
+                        log_error("Storelist_Concung_Selenium.py", error_message)
                         continue
 
                 print(f"Đã lấy {len(store_items)} cửa hàng tại {province_name}/{district_name}/{ward_name}")
 
-        province_trigger = WebDriverWait(driver, 40).until(
-            EC.element_to_be_clickable((By.ID, "province_home"))
-        )
-        driver.execute_script("arguments[0].click();", province_trigger)
-        first_province_elem = WebDriverWait(driver, 40).until(
-            EC.element_to_be_clickable((By.ID, provinces[0][1]))
-        )
-        driver.execute_script("arguments[0].click();", first_province_elem)
-        time.sleep(2)
+        try:
+            province_trigger = WebDriverWait(driver, 40).until(
+                EC.element_to_be_clickable((By.ID, "province_home"))
+            )
+            driver.execute_script("arguments[0].click();", province_trigger)
+            first_province_elem = WebDriverWait(driver, 40).until(
+                EC.element_to_be_clickable((By.ID, provinces[0][1]))
+            )
+            driver.execute_script("arguments[0].click();", first_province_elem)
+            time.sleep(2)
+        except Exception as e:
+            error_message = f"Lỗi khi reset về tỉnh đầu tiên: {e}"
+            log_error("Storelist_Concung_Selenium.py", error_message)
 
-    timestamp = int(time.time())
-    with open(f"concung_stores_{timestamp}.csv", "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(["Tỉnh", "Quận/Huyện", "Xã/Phường", "Địa Chỉ"])
-        writer.writerows(results)
-
-    print(f"Đã lưu {len(results)} cửa hàng vào concung_stores.csv")
+    try:
+        df = pd.DataFrame(results, columns=["Tỉnh", "Quận/Huyện", "Xã/Phường", "Địa Chỉ"])
+        df.to_excel("concung_stores.xlsx", index=False, engine='openpyxl')
+        print(f"Đã lưu {len(results)} cửa hàng vào concung_stores.xlsx")
+    except Exception as e:
+        error_message = f"Lỗi khi lưu file concung_stores.xlsx: {e}"
+        log_error("Storelist_Concung_Selenium.py", error_message)
+        raise
 
 finally:
     driver.quit()
