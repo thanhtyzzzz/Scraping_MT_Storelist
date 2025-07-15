@@ -6,31 +6,41 @@ from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 import time
 import pandas as pd
-import openpyxl
+import sqlite3
 from retrying import retry
 from selenium.common.exceptions import StaleElementReferenceException, TimeoutException
 from datetime import datetime
 
-# Hàm ghi log lỗi vào file Excel
-def log_error(file_name, error_message):
-    log_file = "error_log.xlsx"
+# Hàm ghi log vào SQLite
+def log_to_sqlite(file_name, status, message):
+    log_file = "storelist_logs.db"
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    log_data = [[timestamp, file_name, error_message]]
     
     try:
-        try:
-            wb = openpyxl.load_workbook(log_file)
-            ws = wb.active
-        except FileNotFoundError:
-            wb = openpyxl.Workbook()
-            ws = wb.active
-            ws.append(["Timestamp", "File", "Error Message"])
+        conn = sqlite3.connect(log_file)
+        cursor = conn.cursor()
         
-        ws.append([timestamp, file_name, error_message])
-        wb.save(log_file)
-        print(f"Đã ghi lỗi vào {log_file}: {error_message}")
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS logs (
+                LogID INTEGER PRIMARY KEY AUTOINCREMENT,
+                Timestamp TEXT,
+                File TEXT,
+                Status TEXT,
+                Message TEXT
+            )
+        ''')
+        
+        cursor.execute('''
+            INSERT INTO logs (Timestamp, File, Status, Message)
+            VALUES (?, ?, ?, ?)
+        ''', (timestamp, file_name, status, message))
+        
+        conn.commit()
+        print(f"Đã ghi log vào {log_file}: {status} - {message}")
     except Exception as e:
         print(f"Lỗi khi ghi log vào {log_file}: {e}")
+    finally:
+        conn.close()
 
 # Khởi tạo WebDriver
 options = webdriver.ChromeOptions()
@@ -42,10 +52,11 @@ driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), opti
 
 try:
     url = "https://nhathuoclongchau.com.vn/he-thong-cua-hang/"
+    log_to_sqlite("LongChau.py", "Pending", f"Bắt đầu truy cập {url}")
     driver.get(url)
+    log_to_sqlite("LongChau.py", "Succeeded", f"Truy cập {url} thành công")
 except Exception as e:
-    error_message = f"Lỗi khi truy cập trang web: {e}"
-    log_error("Storelist_LongChau_Selenium.py", error_message)
+    log_to_sqlite("LongChau.py", "Failed", f"Lỗi khi truy cập trang web: {e}")
     driver.quit()
     exit()
 
@@ -54,12 +65,11 @@ try:
     WebDriverWait(driver, 20).until(
         EC.presence_of_element_located((By.CSS_SELECTOR, "div.w-full.dropdown-input"))
     )
+    log_to_sqlite("LongChau.py", "Succeeded", "Tải dropdown tỉnh/thành thành công")
 except Exception as e:
-    error_message = f"Lỗi khi chờ dropdown: {e}"
-    log_error("Storelist_LongChau_Selenium.py", error_message)
+    log_to_sqlite("LongChau.py", "Failed", f"Lỗi khi chờ dropdown: {e}")
     driver.quit()
     exit()
-
 
 all_addresses = []
 
@@ -68,14 +78,15 @@ try:
     try:
         dropdown = driver.find_element(By.CSS_SELECTOR, "div.w-full.dropdown-input")
         dropdown.click()
+        log_to_sqlite("LongChau.py", "Succeeded", "Click dropdown thành công")
     except:
         try:
             print("Không click được div, thử click span...")
             dropdown = driver.find_element(By.CSS_SELECTOR, "span.dropdown-icon")
             dropdown.click()
+            log_to_sqlite("LongChau.py", "Succeeded", "Click span dropdown thành công")
         except Exception as e:
-            error_message = f"Lỗi khi click dropdown: {e}"
-            log_error("Storelist_LongChau_Selenium.py", error_message)
+            log_to_sqlite("LongChau.py", "Failed", f"Lỗi khi click dropdown: {e}")
             driver.quit()
             exit()
     
@@ -87,15 +98,17 @@ try:
             EC.presence_of_element_located((By.CSS_SELECTOR, "div.dropdown-menu"))
         )
         print("Dropdown đã mở, kiểm tra input tìm kiếm...")
+        log_to_sqlite("LongChau.py", "Succeeded", "Dropdown tỉnh/thành đã mở")
         try:
             search_input = driver.find_element(By.CSS_SELECTOR, "div.dropdown-menu input[placeholder='Nhập tìm Tỉnh/Thành phố']")
             search_input.clear()
             print("Đã xóa input tìm kiếm.")
+            log_to_sqlite("LongChau.py", "Succeeded", "Xóa input tìm kiếm thành công")
         except:
             print("Không tìm thấy input tìm kiếm, tiếp tục...")
+            log_to_sqlite("LongChau.py", "Failed", "Không tìm thấy input tìm kiếm")
     except Exception as e:
-        error_message = f"Lỗi khi chờ danh sách tỉnh/thành: {e}"
-        log_error("Storelist_LongChau_Selenium.py", error_message)
+        log_to_sqlite("LongChau.py", "Failed", f"Lỗi khi chờ danh sách tỉnh/thành: {e}")
         driver.quit()
         exit()
 
@@ -114,17 +127,17 @@ try:
                 break
             province_elements = new_provinces
             time.sleep(1)
+            log_to_sqlite("LongChau.py", "Succeeded", f"Tìm được {len(new_provinces)} phần tử tỉnh/thành")
         except Exception as e:
-            error_message = f"Lỗi khi scroll dropdown (lần {retry_count + 1}): {e}"
-            log_error("Storelist_LongChau_Selenium.py", error_message)
+            log_to_sqlite("LongChau.py", "Failed", f"Lỗi khi scroll dropdown (lần {retry_count + 1}): {e}")
             retry_count += 1
             if retry_count == 3:
-                error_message = "Không thể scroll dropdown sau 3 lần thử!"
-                log_error("Storelist_LongChau_Selenium.py", error_message)
+                log_to_sqlite("LongChau.py", "Failed", "Không thể scroll dropdown sau 3 lần thử")
                 break
     
     provinces = [elem.text.strip() for elem in province_elements if elem.text.strip()]
     print(f"Tìm được {len(provinces)} tỉnh/thành: {provinces}")
+    log_to_sqlite("LongChau.py", "Succeeded", f"Tìm được {len(provinces)} tỉnh/thành")
 
     if not provinces:
         try:
@@ -135,21 +148,21 @@ try:
             province_elements = driver.find_elements(By.CSS_SELECTOR, "div.dropdown-item")
             provinces = [elem.text.strip() for elem in province_elements if elem.text.strip()]
             print(f"Thử lại: Tìm được {len(provinces)} tỉnh/thành: {provinces}")
+            log_to_sqlite("LongChau.py", "Succeeded", f"Thử lại: Tìm được {len(provinces)} tỉnh/thành")
         except Exception as e:
-            error_message = f"Lỗi khi thử lại lấy tỉnh/thành: {e}"
-            log_error("Storelist_LongChau_Selenium.py", error_message)
+            log_to_sqlite("LongChau.py", "Failed", f"Lỗi khi thử lại lấy tỉnh/thành: {e}")
             driver.quit()
             exit()
 
     if not provinces:
-        error_message = "Vẫn không tìm được tỉnh/thành, kiểm tra HTML hoặc kết nối mạng!"
-        log_error("Storelist_LongChau_Selenium.py", error_message)
+        log_to_sqlite("LongChau.py", "Failed", "Vẫn không tìm được tỉnh/thành, kiểm tra HTML hoặc kết nối mạng")
         driver.quit()
         exit()
 
     previous_province_addresses = set()
     for province in provinces:
         print(f"\nĐang xử lý tỉnh/thành: {province}")
+        log_to_sqlite("LongChau.py", "Pending", f"Bắt đầu xử lý tỉnh/thành: {province}")
         retry_count = 0
         while retry_count < 5:
             try:
@@ -163,14 +176,13 @@ try:
                 driver.execute_script("arguments[0].scrollIntoView(true);", province_option)
                 province_option.click()
                 time.sleep(1)
+                log_to_sqlite("LongChau.py", "Succeeded", f"Chọn tỉnh {province} thành công")
                 break
             except Exception as e:
-                error_message = f"Lỗi khi chọn tỉnh {province} (lần {retry_count + 1}): {e}"
-                log_error("Storelist_LongChau_Selenium.py", error_message)
+                log_to_sqlite("LongChau.py", "Failed", f"Lỗi khi chọn tỉnh {province} (lần {retry_count + 1}): {e}")
                 retry_count += 1
                 if retry_count == 5:
-                    error_message = f"Bỏ qua tỉnh {province} sau 5 lần thử."
-                    log_error("Storelist_LongChau_Selenium.py", error_message)
+                    log_to_sqlite("LongChau.py", "Failed", f"Bỏ qua tỉnh {province} sau 5 lần thử")
                     break
                 time.sleep(2)
         if retry_count == 5:
@@ -181,9 +193,9 @@ try:
                 EC.presence_of_element_located((By.CSS_SELECTOR, "p.text-body2.text-gray-10"))
             )
             time.sleep(2)
+            log_to_sqlite("LongChau.py", "Succeeded", f"Tải danh sách nhà thuốc cho {province} thành công")
         except Exception as e:
-            error_message = f"Lỗi khi chờ danh sách nhà thuốc cho {province}: {e}"
-            log_error("Storelist_LongChau_Selenium.py", error_message)
+            log_to_sqlite("LongChau.py", "Failed", f"Lỗi khi chờ danh sách nhà thuốc cho {province}: {e}")
             continue
 
         province_addresses = []
@@ -206,17 +218,18 @@ try:
                         if address and address not in province_addresses and address not in previous_province_addresses:
                             addresses.append(address)
                     except StaleElementReferenceException:
-                        error_message = f"Stale element khi lấy địa chỉ ở {province}, thử lại..."
-                        log_error("Storelist_LongChau_Selenium.py", error_message)
+                        log_to_sqlite("LongChau.py", "Failed", f"Stale element khi lấy địa chỉ ở {province}, thử lại...")
                         break
                 province_addresses.extend(addresses)
                 for address in addresses:
                     all_addresses.append((province, address))
+                    log_to_sqlite("LongChau.py", "Succeeded", f"Lấy địa chỉ tại {province}: {address}")
 
                 print(f"Hiện tại: {len(province_addresses)} địa chỉ ở {province}")
 
                 if len(province_addresses) == old_count:
                     print(f"Không tìm thêm được địa chỉ ở {province}, thoát vòng lặp.")
+                    log_to_sqlite("LongChau.py", "Succeeded", f"Không tìm thêm được địa chỉ ở {province}, thoát vòng lặp")
                     break
 
                 try:
@@ -225,32 +238,33 @@ try:
                         lambda d: len(d.find_elements(By.CSS_SELECTOR, "p.text-body2.text-gray-10")) > old_count
                     )
                     print(f"Nhấn 'Xem thêm' thành công, tìm thêm địa chỉ ở {province}...")
+                    log_to_sqlite("LongChau.py", "Succeeded", f"Nhấn 'Xem thêm' thành công, tìm thêm địa chỉ ở {province}")
                     time.sleep(1)
                 except TimeoutException:
                     print(f"Hết địa chỉ hoặc lỗi khi nhấn 'Xem thêm' ở {province}.")
+                    log_to_sqlite("LongChau.py", "Failed", f"Hết địa chỉ hoặc lỗi khi nhấn 'Xem thêm' ở {province}")
                     break
             except StaleElementReferenceException:
-                error_message = f"Stale element khi lấy danh sách địa chỉ ở {province}, thử lại..."
-                log_error("Storelist_LongChau_Selenium.py", error_message)
+                log_to_sqlite("LongChau.py", "Failed", f"Stale element khi lấy danh sách địa chỉ ở {province}, thử lại...")
                 time.sleep(1)
                 continue
             except Exception as e:
-                error_message = f"Lỗi khác khi lấy địa chỉ ở {province}: {e}"
-                log_error("Storelist_LongChau_Selenium.py", error_message)
+                log_to_sqlite("LongChau.py", "Failed", f"Lỗi khác khi lấy địa chỉ ở {province}: {e}")
                 break
 
         previous_province_addresses = set(province_addresses)
         time.sleep(2)
 
 finally:
+    log_to_sqlite("LongChau.py", "Pending", "Bắt đầu lưu file longchau_all_addresses.xlsx")
     try:
         df = pd.DataFrame(all_addresses, columns=['Tỉnh/Thành', 'Địa chỉ'])
         df.insert(0, 'STT', range(1, len(df) + 1))
         df.to_excel("longchau_all_addresses.xlsx", index=False, engine='openpyxl')
         print(f"\nTổng số địa chỉ tìm được: {len(all_addresses)}")
         print(f"Danh sách địa chỉ tổng được lưu vào longchau_all_addresses.xlsx")
+        log_to_sqlite("LongChau.py", "Succeeded", f"Đã lưu {len(all_addresses)} địa chỉ vào longchau_all_addresses.xlsx")
     except Exception as e:
-        error_message = f"Lỗi khi lưu file longchau_all_addresses.xlsx: {e}"
-        log_error("Storelist_LongChau_Selenium.py", error_message)
+        log_to_sqlite("LongChau.py", "Failed", f"Lỗi khi lưu file longchau_all_addresses.xlsx: {e}")
 
     driver.quit()

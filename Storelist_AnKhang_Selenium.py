@@ -7,29 +7,39 @@ from selenium.webdriver.support import expected_conditions as EC
 import time
 import pandas as pd
 import re
-import openpyxl
+import sqlite3
 from datetime import datetime
 
-# Hàm ghi log lỗi vào file Excel
-def log_error(file_name, error_message):
-    log_file = "error_log.xlsx"
+# Hàm ghi log vào SQLite
+def log_to_sqlite(file_name, status, message):
+    log_file = "storelist_logs.db"
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    log_data = [[timestamp, file_name, error_message]]
     
     try:
-        try:
-            wb = openpyxl.load_workbook(log_file)
-            ws = wb.active
-        except FileNotFoundError:
-            wb = openpyxl.Workbook()
-            ws = wb.active
-            ws.append(["Timestamp", "File", "Error Message"])
+        conn = sqlite3.connect(log_file)
+        cursor = conn.cursor()
         
-        ws.append([timestamp, file_name, error_message])
-        wb.save(log_file)
-        print(f"Đã ghi lỗi vào {log_file}: {error_message}")
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS logs (
+                LogID INTEGER PRIMARY KEY AUTOINCREMENT,
+                Timestamp TEXT,
+                File TEXT,
+                Status TEXT,
+                Message TEXT
+            )
+        ''')
+        
+        cursor.execute('''
+            INSERT INTO logs (Timestamp, File, Status, Message)
+            VALUES (?, ?, ?, ?)
+        ''', (timestamp, file_name, status, message))
+        
+        conn.commit()
+        print(f"Đã ghi log vào {log_file}: {status} - {message}")
     except Exception as e:
         print(f"Lỗi khi ghi log vào {log_file}: {e}")
+    finally:
+        conn.close()
 
 # Khởi tạo driver
 chrome_options = Options()
@@ -44,6 +54,7 @@ driver = webdriver.Chrome(service=Service(), options=chrome_options)
 
 try:
     url = "https://www.nhathuocankhang.com/he-thong-nha-thuoc"
+    log_to_sqlite("AnKhang.py", "Pending", f"Bắt đầu truy cập {url}")
     driver.get(url)
 
     # Đợi danh sách tỉnh
@@ -51,9 +62,9 @@ try:
         WebDriverWait(driver, 40).until(
             EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".opt-tinhthanh span"))
         )
+        log_to_sqlite("AnKhang.py", "Succeeded", "Tải danh sách tỉnh thành công")
     except Exception as e:
-        error_message = f"Lỗi khi chờ danh sách tỉnh: {e}"
-        log_error("Storelist_AnKhang_Selenium.py", error_message)
+        log_to_sqlite("AnKhang.py", "Failed", f"Lỗi khi chờ danh sách tỉnh: {e}")
         raise
 
     # Lấy danh sách tỉnh
@@ -69,30 +80,31 @@ try:
             if not name:
                 name = f"Tỉnh thứ {i + 1}"
             province_names.append(name)
+            log_to_sqlite("AnKhang.py", "Succeeded", f"Lấy tên tỉnh: {name}")
         except Exception as e:
-            error_message = f"Lỗi khi lấy tên tỉnh thứ {i + 1}: {e}"
-            log_error("Storelist_AnKhang_Selenium.py", error_message)
+            log_to_sqlite("AnKhang.py", "Failed", f"Lỗi khi lấy tên tỉnh thứ {i + 1}: {e}")
     
     print(f"📋 Tìm thấy {len(province_names)} tỉnh/thành")
+    log_to_sqlite("AnKhang.py", "Succeeded", f"Tìm thấy {len(province_names)} tỉnh/thành")
 
     results = []
 
     # Duyệt từng tỉnh
     for i, province_name in enumerate(province_names):
+        log_to_sqlite("AnKhang.py", "Pending", f"Bắt đầu xử lý tỉnh: {province_name}")
         driver.get(url)
         try:
             WebDriverWait(driver, 40).until(
                 EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".opt-tinhthanh span"))
             )
+            log_to_sqlite("AnKhang.py", "Succeeded", f"Làm mới trang cho tỉnh {province_name}")
         except Exception as e:
-            error_message = f"Lỗi khi làm mới trang cho tỉnh {province_name}: {e}"
-            log_error("Storelist_AnKhang_Selenium.py", error_message)
+            log_to_sqlite("AnKhang.py", "Failed", f"Lỗi khi làm mới trang cho tỉnh {province_name}: {e}")
             continue
 
         province_elements = driver.find_elements(By.CSS_SELECTOR, ".opt-tinhthanh span")
         if len(province_elements) != len(province_names):
-            error_message = f"Số lượng tỉnh không khớp: {len(province_elements)} vs {len(province_names)}"
-            log_error("Storelist_AnKhang_Selenium.py", error_message)
+            log_to_sqlite("AnKhang.py", "Failed", f"Số lượng tỉnh không khớp: {len(province_elements)} vs {len(province_names)}")
             continue
 
         province_elem = province_elements[i]
@@ -108,25 +120,23 @@ try:
                 WebDriverWait(driver, 40).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, "ul.listing-store.zl-list li, .no-results, .empty-message, [class*='no-store'], [class*='empty'], [class*='error'], [class*='no-data']"))
                 )
+                log_to_sqlite("AnKhang.py", "Succeeded", f"Click tỉnh {province_name} thành công")
                 click_success = True
                 break
             except Exception as e:
-                error_message = f"Lỗi click tỉnh {province_name} (lần {attempt + 1}): {e}"
-                log_error("Storelist_AnKhang_Selenium.py", error_message)
+                log_to_sqlite("AnKhang.py", "Failed", f"Lỗi click tỉnh {province_name} (lần {attempt + 1}): {e}")
                 if attempt == retry_count - 1:
-                    error_message = f"Bỏ qua tỉnh {province_name} sau {retry_count} lần thử"
-                    log_error("Storelist_AnKhang_Selenium.py", error_message)
+                    log_to_sqlite("AnKhang.py", "Failed", f"Bỏ qua tỉnh {province_name} sau {retry_count} lần thử")
                     break
                 time.sleep(3)
 
         if not click_success:
-            continue  
+            continue
 
-        # Cehck xem có Store không
+        # Kiểm tra xem có Store không
         no_store_message = driver.find_elements(By.CSS_SELECTOR, ".no-results, .empty-message, [class*='no-store'], [class*='empty'], [class*='error'], [class*='no-data']")
         if no_store_message:
-            error_message = f"Tỉnh {province_name} không có nhà thuốc (thông báo: {no_store_message[0].text})"
-            log_error("Storelist_AnKhang_Selenium.py", error_message)
+            log_to_sqlite("AnKhang.py", "Failed", f"Tỉnh {province_name} không có nhà thuốc (thông báo: {no_store_message[0].text})")
             continue
 
         # Bấm load more nhiều lần
@@ -151,10 +161,10 @@ try:
                 )
                 current_count = len(driver.find_elements(By.CSS_SELECTOR, "ul.listing-store.zl-list li"))
                 print(f"Nhấn 'Xem thêm' lần {see_more_attempts} tại {province_name}, hiện có {current_count} nhà thuốc")
+                log_to_sqlite("AnKhang.py", "Succeeded", f"Nhấn 'Xem thêm' lần {see_more_attempts} tại {province_name}, hiện có {current_count} nhà thuốc")
                 time.sleep(1)
             except Exception as e:
-                error_message = f"Kết thúc nhấn 'Xem thêm' tại {province_name} sau {see_more_attempts} lần: {e}"
-                log_error("Storelist_AnKhang_Selenium.py", error_message)
+                log_to_sqlite("AnKhang.py", "Failed", f"Kết thúc nhấn 'Xem thêm' tại {province_name} sau {see_more_attempts} lần: {e}")
                 break
 
         # Lấy danh sách Store
@@ -167,21 +177,23 @@ try:
                 if name and address:
                     results.append([province_name, name, address])
                     store_count += 1
+                    log_to_sqlite("AnKhang.py", "Succeeded", f"Lấy nhà thuốc tại {province_name}: {name}, {address}")
             except Exception as e:
-                error_message = f"Lỗi khi lấy thông tin nhà thuốc tại {province_name}: {e}"
-                log_error("Storelist_AnKhang_Selenium.py", error_message)
+                log_to_sqlite("AnKhang.py", "Failed", f"Lỗi khi lấy thông tin nhà thuốc tại {province_name}: {e}")
                 continue
 
         print(f"Đã lấy {store_count} nhà thuốc tại {province_name}")
+        log_to_sqlite("AnKhang.py", "Succeeded", f"Đã lấy {store_count} nhà thuốc tại {province_name}")
 
     # Lưu kết quả ra XLSX
+    log_to_sqlite("AnKhang.py", "Pending", "Bắt đầu lưu file ankhang_stores.xlsx")
     try:
         df = pd.DataFrame(results, columns=["Tỉnh", "Tên Nhà Thuốc", "Địa Chỉ"])
         df.to_excel("ankhang_stores.xlsx", index=False, engine='openpyxl')
         print(f"Đã lưu {len(results)} nhà thuốc vào ankhang_stores.xlsx")
+        log_to_sqlite("AnKhang.py", "Succeeded", f"Đã lưu {len(results)} nhà thuốc vào ankhang_stores.xlsx")
     except Exception as e:
-        error_message = f"Lỗi khi lưu file ankhang_stores.xlsx: {e}"
-        log_error("Storelist_AnKhang_Selenium.py", error_message)
+        log_to_sqlite("AnKhang.py", "Failed", f"Lỗi khi lưu file ankhang_stores.xlsx: {e}")
         raise
 
 finally:
